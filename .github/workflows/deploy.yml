@@ -1,0 +1,178 @@
+name: Deploy
+
+on:
+  workflow_run:
+    workflows: ["Build & Push"]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      target_env:
+        description: "Target deployment environment"
+        required: true
+        default: "staging"
+        type: choice
+        options:
+          - staging
+          - production
+          - both
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  # ─── Staging Deployment ────────────────────────────────────────────────────
+  deploy-staging:
+    name: Deploy to Staging
+    if: >-
+      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success') ||
+      (github.event_name == 'workflow_dispatch' && (inputs.target_env == 'staging' || inputs.target_env == 'both'))
+    runs-on: ubuntu-latest
+    environment: staging
+    timeout-minutes: 30
+
+    defaults:
+      run:
+        working-directory: infra/terraform
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ secrets.AWS_REGION || 'us-east-1' }}
+          audience: sts.amazonaws.com
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.7.5"
+          terraform_wrapper: false
+
+      - name: Terraform Init
+        run: |
+          terraform init \
+            -backend-config="bucket=${{ secrets.TF_BACKEND_BUCKET }}" \
+            -backend-config="key=teavision.tfstate" \
+            -backend-config="region=${{ secrets.TF_BACKEND_REGION || 'us-east-1' }}"
+
+      - name: Select Staging Workspace
+        run: |
+          terraform workspace select staging || terraform workspace new staging
+
+      - name: Terraform Plan (Staging)
+        id: plan
+        run: |
+          DEPLOY_TAG="${{ github.event.workflow_run.head_sha || github.sha }}"
+          REGISTRY="${{ secrets.ECR_REGISTRY }}"
+
+          API_IMAGE="${REGISTRY}/teavision-api:${DEPLOY_TAG}"
+          ML_IMAGE="${REGISTRY}/teavision-ml:${DEPLOY_TAG}"
+          WEB_IMAGE="${REGISTRY}/teavision-web:${DEPLOY_TAG}"
+
+          echo "Deploying Staging with images:"
+          echo "API: ${API_IMAGE}"
+          echo "ML:  ${ML_IMAGE}"
+          echo "WEB: ${WEB_IMAGE}"
+
+          terraform plan \
+            -var-file="environments/staging/terraform.tfvars" \
+            -var="api_image=${API_IMAGE}" \
+            -var="ml_image=${ML_IMAGE}" \
+            -var="web_image=${WEB_IMAGE}" \
+            -out=staging.tfplan
+
+      - name: Terraform Apply (Staging)
+        run: |
+          terraform apply -auto-approve staging.tfplan
+
+      - name: Force New ECS Deployment (Staging)
+        run: |
+          CLUSTER_NAME="teavision-staging-cluster"
+          echo "Triggering zero-downtime rolling update for ECS services in ${CLUSTER_NAME}..."
+
+          aws ecs update-service --cluster "${CLUSTER_NAME}" --service "teavision-staging-api" --force-new-deployment
+          aws ecs update-service --cluster "${CLUSTER_NAME}" --service "teavision-staging-ml" --force-new-deployment
+          aws ecs update-service --cluster "${CLUSTER_NAME}" --service "teavision-staging-web" --force-new-deployment
+
+  # ─── Production Deployment (Protected by GitHub Environment Gate) ──────────
+  deploy-production:
+    name: Deploy to Production
+    needs: deploy-staging
+    if: >-
+      always() &&
+      (needs.deploy-staging.result == 'success' || (github.event_name == 'workflow_dispatch' && inputs.target_env == 'production'))
+    runs-on: ubuntu-latest
+    environment: production
+    timeout-minutes: 30
+
+    defaults:
+      run:
+        working-directory: infra/terraform
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ secrets.AWS_REGION || 'us-east-1' }}
+          audience: sts.amazonaws.com
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.7.5"
+          terraform_wrapper: false
+
+      - name: Terraform Init
+        run: |
+          terraform init \
+            -backend-config="bucket=${{ secrets.TF_BACKEND_BUCKET }}" \
+            -backend-config="key=teavision.tfstate" \
+            -backend-config="region=${{ secrets.TF_BACKEND_REGION || 'us-east-1' }}"
+
+      - name: Select Production Workspace
+        run: |
+          terraform workspace select production || terraform workspace new production
+
+      - name: Terraform Plan (Production)
+        id: plan
+        run: |
+          DEPLOY_TAG="${{ github.event.workflow_run.head_sha || github.sha }}"
+          REGISTRY="${{ secrets.ECR_REGISTRY }}"
+
+          API_IMAGE="${REGISTRY}/teavision-api:${DEPLOY_TAG}"
+          ML_IMAGE="${REGISTRY}/teavision-ml:${DEPLOY_TAG}"
+          WEB_IMAGE="${REGISTRY}/teavision-web:${DEPLOY_TAG}"
+
+          echo "Deploying Production with images:"
+          echo "API: ${API_IMAGE}"
+          echo "ML:  ${ML_IMAGE}"
+          echo "WEB: ${WEB_IMAGE}"
+
+          terraform plan \
+            -var-file="environments/production/terraform.tfvars" \
+            -var="api_image=${API_IMAGE}" \
+            -var="ml_image=${ML_IMAGE}" \
+            -var="web_image=${WEB_IMAGE}" \
+            -out=production.tfplan
+
+      - name: Terraform Apply (Production)
+        run: |
+          terraform apply -auto-approve production.tfplan
+
+      - name: Force New ECS Deployment (Production)
+        run: |
+          CLUSTER_NAME="teavision-production-cluster"
+          echo "Triggering zero-downtime rolling update for ECS services in ${CLUSTER_NAME}..."
+
+          aws ecs update-service --cluster "${CLUSTER_NAME}" --service "teavision-production-api" --force-new-deployment
+          aws ecs update-service --cluster "${CLUSTER_NAME}" --service "teavision-production-ml" --force-new-deployment
+          aws ecs update-service --cluster "${CLUSTER_NAME}" --service "teavision-production-web" --force-new-deployment

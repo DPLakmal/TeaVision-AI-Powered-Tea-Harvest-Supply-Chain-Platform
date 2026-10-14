@@ -1,0 +1,203 @@
+name: CI
+
+on:
+  pull_request:
+    branches:
+      - main
+      - develop
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ─── Go REST API Tests & Coverage ──────────────────────────────────────────
+  test-api:
+    name: Test Go API
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: teavision_test
+          POSTGRES_USER: teavision
+          POSTGRES_PASSWORD: changeme_strong_password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Go 1.22
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+          check-latest: false
+
+      - name: Run Go API Tests & Vet
+        working-directory: services/api
+        env:
+          DATABASE_URL: postgres://teavision:changeme_strong_password@localhost:5432/teavision_test?sslmode=disable
+          JWT_SECRET: test_jwt_secret_must_be_at_least_32_bytes_long
+          API_ENV: test
+        run: |
+          if [ -f "go.mod" ]; then
+            echo "Downloading Go modules..."
+            go mod download
+            echo "Running go vet..."
+            go vet ./...
+            echo "Running test suite with race detector..."
+            go test ./... -v -race -coverprofile=coverage.out
+          else
+            echo "go.mod not yet created; creating dummy coverage report."
+            touch coverage.out
+          fi
+
+      - name: Upload Go Test Coverage Artifact
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: api-coverage-report
+          path: services/api/coverage.out
+          retention-days: 14
+
+  # ─── Python FastAPI ML Tests ───────────────────────────────────────────────
+  test-ml:
+    name: Test ML Service
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+          cache-dependency-path: 'services/ml/requirements.txt'
+
+      - name: Install ML Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          if [ -f "services/ml/requirements.txt" ]; then
+            pip install -r services/ml/requirements.txt --extra-index-url https://download.pytorch.org/whl/cpu
+          fi
+          pip install pytest pytest-cov
+
+      - name: Run Pytest Suite
+        env:
+          ML_ENV: test
+          MODEL_PATH: services/ml/models/tea_grader.pt
+        run: |
+          if [ -d "services/ml/tests" ] && [ "$(ls -A services/ml/tests 2>/dev/null)" ]; then
+            pytest services/ml/tests/ -v --tb=short
+          else
+            echo "services/ml/tests is empty or not yet populated; skipping test execution."
+          fi
+
+  # ─── Next.js Analytics Web Dashboard Typecheck & Build ─────────────────────
+  typecheck-web:
+    name: Typecheck & Build Web Dashboard
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+          cache-dependency-path: 'services/web/package-lock.json'
+
+      - name: Install Dependencies
+        working-directory: services/web
+        run: |
+          if [ -f "package-lock.json" ]; then
+            npm ci
+          elif [ -f "package.json" ]; then
+            npm install
+          else
+            echo "No package.json in services/web; skipping install."
+          fi
+
+      - name: TypeScript Check
+        working-directory: services/web
+        run: |
+          if [ -f "tsconfig.json" ]; then
+            npx tsc --noEmit
+          else
+            echo "No tsconfig.json in services/web; skipping typecheck."
+          fi
+
+      - name: Lint Check
+        working-directory: services/web
+        run: |
+          if [ -f "package.json" ] && npm run | grep -q "^  lint"; then
+            npm run lint
+          else
+            echo "No lint script defined in services/web; skipping lint."
+          fi
+
+      - name: Next.js Production Build
+        working-directory: services/web
+        env:
+          NEXT_PUBLIC_API_URL: http://localhost:8080
+          NEXT_PUBLIC_ML_URL: http://localhost:8000
+          NEXTAUTH_URL: http://localhost:3000
+          NEXTAUTH_SECRET: ci_mock_nextauth_secret_for_build
+        run: |
+          if [ -f "package.json" ] && npm run | grep -q "^  build"; then
+            npm run build
+          else
+            echo "No build script defined in services/web; skipping build."
+          fi
+
+  # ─── React Native Field App Typecheck ──────────────────────────────────────
+  typecheck-field:
+    name: Typecheck React Native Field App
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+          cache-dependency-path: 'apps/field/package-lock.json'
+
+      - name: Install Dependencies
+        working-directory: apps/field
+        run: |
+          if [ -f "package-lock.json" ]; then
+            npm ci
+          elif [ -f "package.json" ]; then
+            npm install
+          else
+            echo "No package.json in apps/field; skipping install."
+          fi
+
+      - name: TypeScript Check
+        working-directory: apps/field
+        run: |
+          if [ -f "tsconfig.json" ]; then
+            npx tsc --noEmit
+          else
+            echo "No tsconfig.json in apps/field; skipping typecheck."
+          fi

@@ -1,0 +1,253 @@
+{
+  "swagger": "2.0",
+  "info": {
+    "description": "AI-Powered Tea Harvest & Supply Chain Platform REST API.",
+    "title": "TeaVision API",
+    "termsOfService": "http://swagger.io/terms/",
+    "contact": {
+      "name": "TeaVision Engineering",
+      "url": "https://teavision.io",
+      "email": "dev@teavision.io"
+    },
+    "license": {
+      "name": "MIT",
+      "url": "https://opensource.org/licenses/MIT"
+    },
+    "version": "1.0"
+  },
+  "host": "localhost:8080",
+  "basePath": "/",
+  "paths": {
+    "/health": {
+      "get": {
+        "summary": "Health check probe",
+        "produces": ["application/json"],
+        "responses": {
+          "200": { "description": "OK" }
+        }
+      }
+    },
+    "/readyz": {
+      "get": {
+        "summary": "Readiness check probe",
+        "produces": ["application/json"],
+        "responses": {
+          "200": { "description": "Ready" },
+          "503": { "description": "Not Ready" }
+        }
+      }
+    },
+    "/api/v1/auth/login": {
+      "post": {
+        "tags": ["auth"],
+        "summary": "User login",
+        "consumes": ["application/json"],
+        "produces": ["application/json"],
+        "responses": {
+          "200": { "description": "Success" },
+          "401": { "description": "Unauthorized" }
+        }
+      }
+    },
+    "/api/v1/auth/refresh": {
+      "post": {
+        "tags": ["auth"],
+        "summary": "Refresh access token",
+        "consumes": ["application/json"],
+        "produces": ["application/json"],
+        "responses": {
+          "200": { "description": "Success" },
+          "401": { "description": "Unauthorized" }
+        }
+      }
+    },
+    "/api/v1/auth/logout": {
+      "post": {
+        "tags": ["auth"],
+        "summary": "User logout",
+        "consumes": ["application/json"],
+        "produces": ["application/json"],
+        "responses": {
+          "200": { "description": "Success" }
+        }
+      }
+    },
+    "/api/v1/users": {
+      "get": {
+        "security": [{"BearerAuth": []}],
+        "tags": ["users"],
+        "summary": "List all users (Admin)",
+        "produces": ["application/json"],
+        "responses": { "200": { "description": "Success" } }
+      },
+      "post": {
+        "security": [{"BearerAuth": []}],
+        "tags": ["users"],
+        "summary": "Create user (Admin)",
+        "consumes": ["application/json"],
+        "produces": ["application/json"],
+        "responses": { "201": { "description": "Created" } }
+      }
+    },
+    "/api/v1/workers": {
+      "get": {
+        "security": [{"BearerAuth": []}],
+        "tags": ["workers"],
+        "summary": "List workers (Admin, Supervisor)",
+        "produces": ["application/json"],
+        "responses": { "200": { "description": "Success" } }
+      },
+      "post": {
+        "security": [{"BearerAuth": []}],
+        "tags": ["workers"],
+        "summary": "Create worker (Admin, Supervisor)",
+        "consumes": ["application/json"],
+        "produces": ["application/json"],
+        "responses": { "201": { "description": "Created" } }
+      }
+    },
+    "/api/v1/gardens": {
+      "get": {
+        "security": [{"BearerAuth": []}],
+        "tags": ["gardens"],
+        "summary": "List tea gardens",
+        "produces": ["application/json"],
+        "responses": { "200": { "description": "Success" } }
+      },
+      "post": {
+        "security": [{"BearerAuth": []}],
+        "tags": ["gardens"],
+        "summary": "Create tea garden (Admin)",
+        "consumes": ["application/json"],
+        "produces": ["application/json"],
+        "responses": { "201": { "description": "Created" } }
+      }
+    },
+    "/api/v1/harvests": {
+      "get": {
+        "security": [{"BearerAuth": []}],
+        "tags": ["harvest"],
+        "summary": "List harvest sessions",
+        "produces": ["application/json"],
+        "responses": { "200": { "description": "Success" } }
+      },
+      "post": {
+        "security": [{"BearerAuth": []}],
+        "tags": ["harvest"],
+        "summary": "Start harvest session",
+        "consumes": ["application/json"],
+        "produces": ["application/json"],
+        "responses": { "201": { "description": "Created" } }
+      }
+    },
+    "/api/v1/lots": {
+      "post": {
+        "security": [{"BearerAuth": []}],
+        "tags": ["harvest"],
+        "summary": "Record harvest lot",
+        "consumes": ["application/json"],
+        "produces": ["application/json"],
+        "responses": { "201": { "description": "Created" } }
+      }
+    },
+    "/api/v1/lots/{id}/grade": {
+      "put": {
+        "security": [{"BearerAuth": []}],
+        "tags": ["harvest"],
+        "summary": "Grade harvest lot (ML or manual override)",
+        "consumes": ["application/json"],
+        "produces": ["application/json"],
+        "responses": { "200": { "description": "Success" } }
+      }
+    },
+    "/api/v1/payroll/run": {
+      "post": {
+        "security": [{"BearerAuth": []}],
+        "tags": ["payroll"],
+        "summary": "Execute payroll run (Admin)",
+        "consumes": ["application/json"],
+        "produces": ["application/json"],
+        "responses": { "201": { "description": "Created" } }
+      }
+    },
+    "/api/v1/payroll/runs": {
+      "get": {
+        "security": [{"BearerAuth": []}],
+        "tags": ["payroll"],
+        "summary": "List payroll runs (Admin)",
+        "produces": ["application/json"],
+        "responses": { "200": { "description": "Success" } }
+      }
+    },
+    "/api/v1/batches": {
+      "get": {
+        "security": [{"BearerAuth": []}],
+        "tags": ["batches"],
+        "summary": "List batches",
+        "produces": ["application/json"],
+        "responses": { "200": { "description": "Success" } }
+      },
+      "post": {
+        "security": [{"BearerAuth": []}],
+        "tags": ["batches"],
+        "summary": "Create batch from lots",
+        "consumes": ["application/json"],
+        "produces": ["application/json"],
+        "responses": { "201": { "description": "Created" } }
+      }
+    },
+    "/api/v1/batches/{id}/trace": {
+      "get": {
+        "security": [{"BearerAuth": []}],
+        "tags": ["batches"],
+        "summary": "Get farm-to-cup batch trace",
+        "produces": ["application/json"],
+        "responses": { "200": { "description": "Success" } }
+      }
+    },
+    "/api/v1/analytics/yield": {
+      "get": {
+        "security": [{"BearerAuth": []}],
+        "tags": ["analytics"],
+        "summary": "Get yield analytics",
+        "produces": ["application/json"],
+        "responses": { "200": { "description": "Success" } }
+      }
+    },
+    "/api/v1/analytics/quality": {
+      "get": {
+        "security": [{"BearerAuth": []}],
+        "tags": ["analytics"],
+        "summary": "Get quality distribution analytics",
+        "produces": ["application/json"],
+        "responses": { "200": { "description": "Success" } }
+      }
+    },
+    "/api/v1/analytics/workers": {
+      "get": {
+        "security": [{"BearerAuth": []}],
+        "tags": ["analytics"],
+        "summary": "Get top workers performance",
+        "produces": ["application/json"],
+        "responses": { "200": { "description": "Success" } }
+      }
+    },
+    "/api/v1/analytics/payroll": {
+      "get": {
+        "security": [{"BearerAuth": []}],
+        "tags": ["analytics"],
+        "summary": "Get payroll macro analytics",
+        "produces": ["application/json"],
+        "responses": { "200": { "description": "Success" } }
+      }
+    }
+  },
+  "securityDefinitions": {
+    "BearerAuth": {
+      "type": "apiKey",
+      "name": "Authorization",
+      "in": "header",
+      "description": "Type 'Bearer' followed by a space and your JWT access token."
+    }
+  }
+}
